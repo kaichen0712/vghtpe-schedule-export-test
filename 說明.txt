@@ -14,10 +14,22 @@ git init
 git remote add origin https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
 git add .
 git commit -m "init"
-git push -u origin main
+git push -u origin main  # 要先建立repository.
 
 
 之後 GitHub Actions 會自動幫你部署到 Pages，
 完成後網站會在：
 
 https://zhanyanjie6796.github.io/vghtpe-schedule-export-zyj
+
+================================================
+彥杰：在做前面git push之前，要先建立repository.
+
+步驟 1. 到 GitHub 建立空的 repository
+進到 https://github.com/new
+Repository name → 填：vghtpe-schedule-export-zyj
+
+建議設為 Public
+不要勾選任何初始化選項（例如 README、.gitignore、license）
+建立完成後，會得到遠端網址：
+https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
