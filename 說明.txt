@@ -33,3 +33,10 @@ Repository name → 填：vghtpe-schedule-export-zyj
 不要勾選任何初始化選項（例如 README、.gitignore、license）
 建立完成後，會得到遠端網址：
 https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
+
+================================================
+主要修改檔案
+vite.config.mjs
+package.json
+package-lock.json
+deploy.yml
