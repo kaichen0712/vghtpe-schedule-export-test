@@ -2,6 +2,7 @@
   "name": "vghtpe-schedule-export-zyj",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -9,11 +10,11 @@
     "postbuild": "cp dist/index.html dist/404.html || copy dist\\index.html dist\\404.html"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
   },
   "devDependencies": {
     "vite": "^5.3.0",
-    "@vitejs/plugin-react": "^4.3.0"
+    "@vitejs/plugin-react": "5.0.1"
   }
 }
