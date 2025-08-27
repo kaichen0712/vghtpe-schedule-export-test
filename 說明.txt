@@ -1,3 +1,8 @@
+Local 測試：
+npm install # 安裝node_modules
+npm run dev # 預設 http://localhost:5173
+
+================================================
 ChatGPT下載的：
 📦 vghtpe-schedule-export-zyj.zip
 
@@ -13,7 +18,7 @@ npm install
 git init
 git remote add origin https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
 git add .
-git commit -m "init"
+git commit -m "自己取名字"
 git push -u origin main  # 要先建立repository.
 
 
@@ -35,8 +40,18 @@ Repository name → 填：vghtpe-schedule-export-zyj
 https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
 
 ================================================
+部署前 git hub 上設定：Pages 啟用
+
+官方 GitHub Pages 流程
+到你的 repo：Settings → Pages
+在 Build and deployment 把 Source 設成 GitHub Actions（不是 None / Branch）。按 Save。
+（可選）到 Settings → Actions → General → Workflow permissions 勾 Read and write permissions。
+回到 Actions，對這次 workflow 按 Re-run jobs（或推一次 commit 讓它自動重跑）。
+
+================================================
 主要修改檔案
 vite.config.mjs
 package.json
 package-lock.json
 deploy.yml
+
