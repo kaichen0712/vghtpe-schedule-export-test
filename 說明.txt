@@ -1,0 +1,23 @@
+ChatGPT下載的：
+📦 vghtpe-schedule-export-zyj.zip
+
+使用方式
+# 1. 解壓縮
+unzip vghtpe-schedule-export-zyj.zip
+cd vghtpe-schedule-export-zyj
+
+# 2. 安裝依賴
+npm install
+
+# 3. 初始化 Git 並推送到 GitHub
+git init
+git remote add origin https://github.com/zhanyanjie6796/vghtpe-schedule-export-zyj.git
+git add .
+git commit -m "init"
+git push -u origin main
+
+
+之後 GitHub Actions 會自動幫你部署到 Pages，
+完成後網站會在：
+
+https://zhanyanjie6796.github.io/vghtpe-schedule-export-zyj
