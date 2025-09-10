@@ -1,6 +1,6 @@
 // import { useState, useEffect } from "react";
 import { useState } from "react";
-import * as XLSX from "xlsx-js-style";
+import * as XLSX from "xlsx";
 
 export default function App() {
   // 新增：頁簽狀態與文字內容
@@ -9,7 +9,7 @@ export default function App() {
   const [savedText, setSavedText] = useState("");
   const [isEditing, setIsEditing] = useState(false); // 新增：編輯狀態
 
-  // // 讀取 localStorage（如需自動載入先前內容，可開啟）
+  // // 讀取 localStorage
   // useEffect(() => {
   //   const saved = localStorage.getItem("mySavedText");
   //   if (saved !== null) {
@@ -25,7 +25,7 @@ export default function App() {
     localStorage.setItem("mySavedText", inputText);
   };
 
-  // 解析 HTML table 並轉成 xlsx（支援紅字樣式、全表新細明體12pt）
+  // 解析 HTML table 並轉成 xlsx
   const handleExportHtmlTableToExcel = () => {
     if (!savedText) return;
 
@@ -51,118 +51,64 @@ export default function App() {
         }
         text = text.replace(/\s+/g, " ").trim();
 
-        // 文字替換
-        if (text === "例假" || text === "休假" || text === "休息日" || text === "特別休假") {
+        // 這裡做替換
+        if (text === "例假" || text === "休假") {
           text = "1";
         }
 
-        // 是否包含 alt="長假預約"
-        const hasLongVacation = Array.from(cell.querySelectorAll("img")).some(
-          (img) => img.getAttribute("alt")?.includes("長假預約")
-        );
+        // 收集 <img title="...">
+        const imgTitles = Array.from(cell.querySelectorAll("img[title]")).map(img =>
+          img.getAttribute("title")?.trim() || ""
+        ).filter(Boolean);
 
-        // 如果包含 alt="長假預約"，則設定文字為 "1"
-        if (hasLongVacation) {
-          text = "1";
-        }
-
-        // 收集 <img title="..."> 當成註解
-        const imgTitles = Array.from(cell.querySelectorAll("img[title]"))
-          .map((img) => img.getAttribute("title")?.trim() || "")
-          .filter(Boolean);
-
-        // 需要紅色字體（遇到長假預約）
-        const isRedText = hasLongVacation;
-
-        row.push({ text, imgTitles, isRedText });
+        row.push({ text, imgTitles });
       }
       rows.push(row);
     }
 
-    // 3. 轉成 xlsx 的 sheet（先建立純值）
+    // 3. 轉成 xlsx
     const ws_data = rows.map((row, idx) => {
       if (idx === 1) {
-        return ["", ...row.map((cell) => cell.text)];
+        return ["", ...row.map(cell => cell.text)];
       }
-      return row.map((cell) => cell.text);
+      return row.map(cell => cell.text);
     });
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
 
-    // 4. 設定樣式（xlsx-js-style 使用 ARGB 色碼）
-    const baseStyle = {
-      font: {
-        name: "新細明體",
-        sz: 12,
-        color: { rgb: "FF000000" } // 黑色
-      }
-    };
-    const redStyle = {
-      font: {
-        name: "新細明體",
-        sz: 12,
-        color: { rgb: "FFFF0000" } // 紅色
-      }
-    };
-
-    // 先套用紅字（長假預約）
+    // 4. 加入註解
     rows.forEach((row, r) => {
       row.forEach((cell, c) => {
-        const colIdx = r === 1 ? c + 1 : c; // 與你原本邏輯一致
-        const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
-        if (!ws[cellRef]) ws[cellRef] = { t: "s", v: cell.text };
-
-        if (cell.isRedText) {
-          ws[cellRef].s = redStyle; // 紅色 + 新細明體 12
-        }
-      });
-    });
-
-    // 再確保其他沒指定樣式的 cell 用 baseStyle（新細明體 12）
-    Object.keys(ws).forEach((cellRef) => {
-      if (cellRef[0] === "!") return; // 跳過 metadata
-      if (!ws[cellRef].s) {
-        ws[cellRef].s = baseStyle;
-      }
-    });
-
-    // 5. 加入註解（支援以 cell.c 寫入；部分 Excel 版本預設隱藏）
-    rows.forEach((row, r) => {
-      row.forEach((cell, c) => {
-        const colIdx = r === 1 ? c + 1 : c;
+        const colIdx = (r === 1) ? c + 1 : c;
         if (cell.imgTitles && cell.imgTitles.length > 0) {
           const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
-          if (!ws[cellRef]) ws[cellRef] = { t: "s", v: cell.text };
-          ws[cellRef].c = [
-            {
-              t: cell.imgTitles.join("\n"),
-              a: "HTML",
-              hidden: true, // 開啟檔案後如需顯示：Excel → 校閱 → 註解 → 顯示所有註解
-            },
-          ];
+          if (!ws[cellRef]) ws[cellRef] = { t: 's', v: cell.text };
+          ws[cellRef].c = [{
+            t: cell.imgTitles.join('\n'),
+            a: "HTML",
+            hidden: true
+          }];
         }
       });
     });
 
-    // 6. 欄寬
+    // 5. 設定第一欄寬
     ws["!cols"] = [{ wch: 16 }];
 
-    // 7. 匯出
+    // 6. 匯出
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "內容");
-
-    // 取 #rptTitle 作為檔名
-    const rptTitleElement = doc.querySelector("#rptTitle");
-    const rptTitle = rptTitleElement ? rptTitleElement.textContent.trim() : "排版轉換";
-    const fileName = `${rptTitle}.xlsx`;
-
-    // 以 array → Blob 下載
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
 
+    // 取得 rptTitle 作為檔名
+    const rptTitleElement = doc.querySelector("#rptTitle");
+    const rptTitle = rptTitleElement ? rptTitleElement.textContent.trim() : "排版轉換";
+    const fileName = `${rptTitle}.xlsx`;
+
     const a = document.createElement("a");
     a.href = url;
-    a.download = fileName;
+    a.download = fileName; // 這裡改檔名
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -204,7 +150,7 @@ export default function App() {
             letterSpacing: 1,
             color: "#1976d2",
             marginBottom: 8,
-            textAlign: "center",
+            textAlign: "center"
           }}
         >
           護理班表匯出工具
@@ -215,7 +161,7 @@ export default function App() {
             borderBottom: "2px solid #e3e8ee",
             marginBottom: 32,
             gap: 2,
-            justifyContent: "center",
+            justifyContent: "center"
           }}
         >
           {/* 頁簽按鈕 */}
@@ -231,7 +177,7 @@ export default function App() {
               color: tab === 0 ? "#1976d2" : "#888",
               borderTopLeftRadius: 8,
               borderTopRightRadius: 8,
-              transition: "all 0.2s",
+              transition: "all 0.2s"
             }}
             onClick={() => setTab(0)}
           >
@@ -249,7 +195,7 @@ export default function App() {
               color: tab === 1 ? "#1976d2" : "#888",
               borderTopLeftRadius: 8,
               borderTopRightRadius: 8,
-              transition: "all 0.2s",
+              transition: "all 0.2s"
             }}
             onClick={() => setTab(1)}
           >
@@ -277,7 +223,7 @@ export default function App() {
                       boxShadow: "0 2px 8px rgba(60,60,120,0.08)",
                       marginTop: 8,
                       transition: "all 0.2s",
-                      display: "inline-block",
+                      display: "inline-block"
                     }}
                   >
                     編輯
@@ -298,7 +244,7 @@ export default function App() {
                       marginTop: 8,
                       marginLeft: 16,
                       transition: "all 0.2s",
-                      display: "inline-block",
+                      display: "inline-block"
                     }}
                     disabled={!savedText}
                   >
@@ -321,7 +267,7 @@ export default function App() {
                     boxShadow: "0 2px 12px rgba(25,118,210,0.12)",
                     marginTop: 8,
                     transition: "all 0.2s",
-                    display: "inline-block",
+                    display: "inline-block"
                   }}
                 >
                   儲存
@@ -342,10 +288,10 @@ export default function App() {
                 boxSizing: "border-box",
                 boxShadow: isEditing ? "0 2px 8px rgba(25,118,210,0.08)" : "none",
                 outline: isEditing ? "2px solid #1976d2" : "none",
-                transition: "all 0.2s",
+                transition: "all 0.2s"
               }}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={e => setInputText(e.target.value)}
               placeholder="請貼上內容..."
               disabled={!isEditing}
             />
@@ -366,17 +312,17 @@ export default function App() {
                 boxShadow: "0 2px 8px rgba(60,60,120,0.06)",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-all",
-                transition: "all 0.2s",
+                transition: "all 0.2s"
               }}
             >
               <pre style={{ margin: 0, background: "none", fontFamily: "inherit" }}>
-                使用步驟：{'\n'}
-                1.護理班表查詢功能選好月份後進行查詢，查詢結果顯現後，按 Ctrl+U，會開啓原始 Html 視窗。{'\n'}
-                2.再按鍵盤 Ctrl+A 全選後，按 Ctrl+C 複製。{'\n'}
-                3.在本程式（護理班表匯出工具）的「編輯内容」頁簽裡按一下編輯，滑鼠點在文字方塊上，{'\n'}
-                &nbsp;&nbsp;&nbsp;按 Ctrl+V 貼上，接著按儲存。{'\n'}
-                4.再按 "匯出 Excel" 即可。{'\n'}
-                5.開啓匯出的 Excel，如果要取消開啓的附註，「校閱-註解-顯示所有註解」這裡取消。{'\n'}
+                使用步驟：<br></br>
+                1.護理班表查詢功能選好月份後進行查詢，查詢結果顯現後，按 Ctrl+U，會開啓原始 Html 視窗。<br></br>
+                2.再按鍵盤 Ctrl+A 全選後，按 Ctrl+C 複製。<br></br>
+                3.在本程式（護理班表匯出工具）的「編輯内容」頁簽裡按一下編輯，滑鼠點在文字方塊上，<br></br>
+                &nbsp;&nbsp;&nbsp;按 Ctrl+V 貼上，接著按儲存。<br></br>
+                4.再按 "匯出 Excel" 即可。<br></br>
+                5.開啓匯出的 Excel，如果要取消開啓的附註，「校閲-附註-顯示所有附註」這裏要取消。<br></br>
               </pre>
             </div>
           </div>

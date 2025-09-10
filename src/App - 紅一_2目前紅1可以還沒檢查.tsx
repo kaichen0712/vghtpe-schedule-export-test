@@ -25,7 +25,7 @@ export default function App() {
     localStorage.setItem("mySavedText", inputText);
   };
 
-  // 解析 HTML table 並轉成 xlsx（支援紅字樣式、全表新細明體12pt）
+  // 解析 HTML table 並轉成 xlsx（支援紅字樣式）
   const handleExportHtmlTableToExcel = () => {
     if (!savedText) return;
 
@@ -52,7 +52,7 @@ export default function App() {
         text = text.replace(/\s+/g, " ").trim();
 
         // 文字替換
-        if (text === "例假" || text === "休假" || text === "休息日" || text === "特別休假") {
+        if (text === "例假" || text === "休假") {
           text = "1";
         }
 
@@ -88,41 +88,18 @@ export default function App() {
     });
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
 
-    // 4. 設定樣式（xlsx-js-style 使用 ARGB 色碼）
-    const baseStyle = {
-      font: {
-        name: "新細明體",
-        sz: 12,
-        color: { rgb: "FF000000" } // 黑色
-      }
-    };
-    const redStyle = {
-      font: {
-        name: "新細明體",
-        sz: 12,
-        color: { rgb: "FFFF0000" } // 紅色
-      }
-    };
+    // 4. 設定紅色字體（xlsx-js-style 需使用 ARGB：FFFF0000）
+    const redStyle = { font: { color: { rgb: "FFFF0000" } } };
 
-    // 先套用紅字（長假預約）
     rows.forEach((row, r) => {
       row.forEach((cell, c) => {
         const colIdx = r === 1 ? c + 1 : c; // 與你原本邏輯一致
-        const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
-        if (!ws[cellRef]) ws[cellRef] = { t: "s", v: cell.text };
-
         if (cell.isRedText) {
-          ws[cellRef].s = redStyle; // 紅色 + 新細明體 12
+          const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
+          if (!ws[cellRef]) ws[cellRef] = { t: "s", v: cell.text };
+          ws[cellRef].s = redStyle; // ✅ xlsx-js-style 會套用
         }
       });
-    });
-
-    // 再確保其他沒指定樣式的 cell 用 baseStyle（新細明體 12）
-    Object.keys(ws).forEach((cellRef) => {
-      if (cellRef[0] === "!") return; // 跳過 metadata
-      if (!ws[cellRef].s) {
-        ws[cellRef].s = baseStyle;
-      }
     });
 
     // 5. 加入註解（支援以 cell.c 寫入；部分 Excel 版本預設隱藏）
@@ -155,7 +132,7 @@ export default function App() {
     const rptTitle = rptTitleElement ? rptTitleElement.textContent.trim() : "排版轉換";
     const fileName = `${rptTitle}.xlsx`;
 
-    // 以 array → Blob 下載
+    // 注意：xlsx-js-style 也支援 write（array）→ Blob 下載
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
