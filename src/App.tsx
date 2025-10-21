@@ -7,7 +7,8 @@ export default function App() {
   const [tab, setTab] = useState(0); // 0: 輸入, 1: 顯示
   const [inputText, setInputText] = useState("");
   const [savedText, setSavedText] = useState("");
-  const [isEditing, setIsEditing] = useState(false); // 新增：編輯狀態
+  const [isEditing, setIsEditing] = useState(true); // 新增：編輯狀態
+  const [filterText, setFilterText] = useState(""); // 過濾排序用
 
   // // 讀取 localStorage（如需自動載入先前內容，可開啟）
   // useEffect(() => {
@@ -22,8 +23,19 @@ export default function App() {
   const handleSave = () => {
     setSavedText(inputText);
     setIsEditing(false);
-    localStorage.setItem("mySavedText", inputText);
+    localStorage.setItem("mySavedText", inputText); //localStorage key = "mySavedText"
   };
+  // 清除輸入框資料
+  const handleClear = () => {
+  setInputText("");
+  setSavedText("");
+  localStorage.removeItem("mySavedText"); // 同時清掉 localStorage 的內容
+  };
+  //清除排序條件  
+  const handleClearSort = () => {
+  localStorage.removeItem("scheduleSortList");
+  alert("排序內容已清除！");
+  };    
 
   // 解析 HTML table 並轉成 xlsx（支援紅字樣式、全表新細明體12pt）
   const handleExportHtmlTableToExcel = () => {
@@ -39,7 +51,7 @@ export default function App() {
     }
 
     // 2. 解析表格內容
-    const rows = [];
+    const rows: any[] = []; 
     for (const tr of table.querySelectorAll("tr")) {
       const row = [];
       for (const cell of tr.querySelectorAll("th,td")) {
@@ -78,13 +90,61 @@ export default function App() {
       }
       rows.push(row);
     }
+    // === 新增：根據排序清單重新排列 rows ===
+      const savedSortText = localStorage.getItem("scheduleSortList");
+      if (savedSortText) {
+        const sortList = savedSortText.split("\n").map((x) => x.trim());
+        const headerRows = rows.slice(0, 2);
+        const dataRows = rows.slice(2);
+
+        const sortedRows: any[] = [];
+
+        sortList.forEach((name) => {
+          const trimmed = name.trim();
+
+          // ✅ 若遇到 ADM、7、8 或英數字：留白，不補人名
+          if (/^[A-Za-z0-9]+$/.test(trimmed) || trimmed === "") {
+            const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+              text: "",
+              imgTitles: [],
+              isRedText: false,
+            }));
+            sortedRows.push(blankRow);
+            return;
+          }
+
+          // ✅ 正常人名才搜尋匹配
+          const matchedRow = dataRows.find((row) => {
+            const firstCell = row[0]?.text?.trim?.() || "";
+            return firstCell === trimmed;
+          });
+
+          // 若找到 → 放進去；找不到 → 保留空白
+          if (matchedRow) {
+            sortedRows.push(matchedRow);
+          } else {
+            const emptyRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+              text: "",
+              imgTitles: [],
+              isRedText: false,
+            }));
+            sortedRows.push(emptyRow);
+          }
+        });
+
+        // ✅ 合併回結果
+        if (sortedRows.length > 0) {
+          rows.length = 0;
+          rows.push(...headerRows, ...sortedRows);
+        }
+      }
 
     // 3. 轉成 xlsx 的 sheet（先建立純值）
-    const ws_data = rows.map((row, idx) => {
+    const ws_data = rows.map((row: any[], idx: number) => {
       if (idx === 1) {
-        return ["", ...row.map((cell) => cell.text)];
+        return ["", ...row.map((cell: any) => cell.text)];
       }
-      return row.map((cell) => cell.text);
+      return row.map((cell: any) => cell.text);
     });
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
 
@@ -106,7 +166,7 @@ export default function App() {
 
     // 先套用紅字（長假預約）
     rows.forEach((row, r) => {
-      row.forEach((cell, c) => {
+      row.forEach((cell: any, c: number) => {
         const colIdx = r === 1 ? c + 1 : c; // 與你原本邏輯一致
         const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
         if (!ws[cellRef]) ws[cellRef] = { t: "s", v: cell.text };
@@ -127,7 +187,7 @@ export default function App() {
 
     // 5. 加入註解（支援以 cell.c 寫入；部分 Excel 版本預設隱藏）
     rows.forEach((row, r) => {
-      row.forEach((cell, c) => {
+      row.forEach((cell: any, c: number) => {
         const colIdx = r === 1 ? c + 1 : c;
         if (cell.imgTitles && cell.imgTitles.length > 0) {
           const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
@@ -240,6 +300,24 @@ export default function App() {
           <button
             style={{
               border: "none",
+              background: tab === 2 ? "#e3f0fc" : "#f7fafd",
+              padding: "12px 40px",
+              cursor: "pointer",
+              borderBottom: tab === 2 ? "3px solid #1976d2" : "none",
+              fontWeight: tab === 2 ? "bold" : "normal",
+              fontSize: 20,
+              color: tab === 2 ? "#1976d2" : "#888",
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "all 0.2s",
+            }}
+            onClick={() => setTab(2)}
+          >
+            過濾排序（選填）
+          </button>
+          <button
+            style={{
+              border: "none",
               background: tab === 1 ? "#e3f0fc" : "#f7fafd",
               padding: "12px 40px",
               cursor: "pointer",
@@ -306,6 +384,7 @@ export default function App() {
                   </button>
                 </>
               ) : (
+               <div style={{ textAlign: "center", marginBottom: 24, display: "flex", justifyContent: "center" }}>
                 <button
                   onClick={handleSave}
                   style={{
@@ -326,6 +405,28 @@ export default function App() {
                 >
                   儲存
                 </button>
+                  <button
+                    onClick={handleClear}
+                    style={{
+                      padding: "12px 40px",
+                      fontSize: 20,
+                      background: "#e53935", // 紅色
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                      boxShadow: "0 2px 12px rgba(229,57,53,0.12)",
+                      marginTop: 8,
+                      marginLeft: 16,
+                      transition: "all 0.2s",
+                      display: "inline-block",
+                    }}
+                  >
+                    清除
+                </button>
+               </div>
               )}
             </div>
             <textarea
@@ -381,6 +482,86 @@ export default function App() {
             </div>
           </div>
         )}
+       {/* 過濾排序(選填)頁簽  */}
+        {tab === 2 && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 24, display: "flex", justifyContent: "center" }}>
+            <button
+              onClick={() => {
+                // 🟩 儲存使用者輸入的排序條件到 localStorage
+                // 🔸 Key 名稱：'scheduleSortList'
+                // ⚠️ 注意：此 key 與「編輯內容」頁籤的 'mySavedText' 是不同的，不會互相覆蓋。
+                // 🔸 儲存格式：多行文字（用換行符 \n 分隔），包含空行
+                localStorage.setItem("scheduleSortList", filterText);
+                // ✅ 提示使用者已儲存成功
+                alert("排序條件已儲存！");
+              }}
+              style={{
+                padding: "12px 40px",
+                fontSize: 20,
+                background: "#1976d2",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontWeight: 600,
+                letterSpacing: 1,
+                boxShadow: "0 2px 12px rgba(25,118,210,0.12)",
+                marginTop: 8,
+                transition: "all 0.2s",
+                display: "inline-block",
+              }}
+            >
+              儲存排序
+            </button> 
+            <button
+              onClick={handleClearSort}
+              style={{
+                padding: "12px 40px",
+                fontSize: 20,
+                background: "#e53935", // 紅色
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontWeight: 600,
+                letterSpacing: 1,
+                boxShadow: "0 2px 12px rgba(25, 118, 210, 0.12)",
+                marginTop: 8,
+                transition: "all 0.2s",
+                display: "inline-block",
+                marginLeft: 12, 
+              }}
+            >
+              清除排序
+            </button> 
+            </div>
+            <div>
+              <textarea
+                placeholder="請貼上依序排列的姓名清單（可有空行代表分區）"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                style={{
+                width: "100%",
+                minHeight: 320,
+                fontSize: 20,
+                padding: 20,
+                borderRadius: 12,
+                border: "1.5px solid #b0bec5",
+                background: isEditing ? "#fff" : "#f5f7fa",
+                resize: "vertical",
+                marginBottom: 24,
+                boxSizing: "border-box",
+                boxShadow: isEditing ? "0 2px 8px rgba(25,118,210,0.08)" : "none",
+                outline: isEditing ? "2px solid #1976d2" : "none",
+                transition: "all 0.2s",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        
       </div>
     </div>
   );
