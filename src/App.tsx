@@ -1,14 +1,14 @@
 // import { useState, useEffect } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx-js-style";
 
 export default function App() {
   // 新增：頁簽狀態與文字內容
-  const [tab, setTab] = useState(0); // 0: 輸入, 1: 顯示
+  const [tab, setTab] = useState(0); // 0: 編輯內容, 1: 使用說明, 2: 排序
   const [inputText, setInputText] = useState("");
   const [savedText, setSavedText] = useState("");
-  const [isEditing, setIsEditing] = useState(true); // 新增：編輯狀態
   const [filterText, setFilterText] = useState(""); // 過濾排序用
+  const [missingNames, setMissingNames] = useState<string[]>([]);// 🟩 匯出後顯示沒比對到的人名
 
   // // 讀取 localStorage（如需自動載入先前內容，可開啟）
   // useEffect(() => {
@@ -18,11 +18,16 @@ export default function App() {
   //     setInputText(saved);
   //   }
   // }, []);
+useEffect(() => {
+    if (missingNames.length > 0) {
+      setTab(2);
+    }
+  }, [missingNames]);
+
 
   // 儲存到 localStorage
   const handleSave = () => {
     setSavedText(inputText);
-    setIsEditing(false);
     localStorage.setItem("mySavedText", inputText); //localStorage key = "mySavedText"
   };
   // 清除輸入框資料
@@ -33,14 +38,20 @@ export default function App() {
   };
   //清除排序條件  
   const handleClearSort = () => {
+  setFilterText("");
   localStorage.removeItem("scheduleSortList");
   alert("排序內容已清除！");
   };    
 
   // 解析 HTML table 並轉成 xlsx（支援紅字樣式、全表新細明體12pt）
   const handleExportHtmlTableToExcel = () => {
-    if (!savedText) return;
+     const html = savedText || inputText;
 
+      // 🔸若內容完全是空的
+      if (!html.trim()) {
+        alert("請先貼上內容或儲存表格再匯出！");
+        return;
+      }
     // 1. 解析 HTML
     const parser = new DOMParser();
     const doc = parser.parseFromString(savedText, "text/html");
@@ -93,52 +104,89 @@ export default function App() {
     // === 新增：根據排序清單重新排列 rows ===
       const savedSortText = localStorage.getItem("scheduleSortList");
       if (savedSortText) {
-        const sortList = savedSortText.split("\n").map((x) => x.trim());
+      let sortList = savedSortText
+        .split("\n")
+        .map((x) => x.trim())
+        let cleanedList: string[] = [];
+        let lastWasEmpty = false;
+        for (const line of sortList) {
+          const trimmed = line.trim();
+          const isNonName = trimmed === "" || /^[A-Za-z0-9]+$/.test(trimmed);
+          if (isNonName) {
+            if (!lastWasEmpty) {
+              cleanedList.push("");
+              lastWasEmpty = true;
+            }
+          } else {
+            cleanedList.push(trimmed);
+            lastWasEmpty = false;
+          }
+        }
+        sortList = cleanedList;
+
         const headerRows = rows.slice(0, 2);
         const dataRows = rows.slice(2);
-
         const sortedRows: any[] = [];
+        const notFound: string[] = []; // 🟩 新增：紀錄沒比對到的人名
+       sortList.forEach((name) => {
+        const trimmed = name.trim();
 
-        sortList.forEach((name) => {
-          const trimmed = name.trim();
+        // 🟦 若是英文、數字或空白行 → 當作分區，用空白行表示
+        if (/^[A-Za-z0-9]+$/.test(trimmed) || trimmed === "") {
+          const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+            text: "",
+            imgTitles: [],
+            isRedText: false,
+          }));
+          sortedRows.push(blankRow);
+          return;
+        }
 
-          // ✅ 若遇到 ADM、7、8 或英數字：留白，不補人名
-          if (/^[A-Za-z0-9]+$/.test(trimmed) || trimmed === "") {
-            const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
-              text: "",
-              imgTitles: [],
-              isRedText: false,
-            }));
-            sortedRows.push(blankRow);
-            return;
-          }
-
-          // ✅ 正常人名才搜尋匹配
-          const matchedRow = dataRows.find((row) => {
-            const firstCell = row[0]?.text?.trim?.() || "";
-            return firstCell === trimmed;
-          });
-
-          // 若找到 → 放進去；找不到 → 保留空白
-          if (matchedRow) {
-            sortedRows.push(matchedRow);
-          } else {
-            const emptyRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
-              text: "",
-              imgTitles: [],
-              isRedText: false,
-            }));
-            sortedRows.push(emptyRow);
-          }
+        // 🟩 若是中文名字 → 嘗試在表格中比對
+        const matchedRow = dataRows.find((row) => {
+          const firstCell = row[0]?.text?.trim?.() || "";
+          return firstCell === trimmed;
         });
 
+        if (matchedRow) {
+          sortedRows.push(matchedRow);
+        } else {
+          // 🧩 判斷是否為中文人名（2~4個中文字，可夾一個外文字母）
+          const isLikelyChineseName = /^[\u4e00-\u9fa5]{2,4}$/.test(trimmed);
+
+          // 🚫 定義常見非人名關鍵詞
+          const nonNameKeywords = [
+            "Leader", "新人", "上", "固定支援", "排班", "支援", "彈放",
+            "實際人數", "上班人數", "行事曆", "日期", "姓名",
+            "病房", "月初", "來班", "E", "N", "D"
+          ];
+
+          // 🚫 若文字包含以上任一關鍵詞或是全數字，則略過
+          const isClearlyNonName =
+            /^[0-9]+$/.test(trimmed) ||
+            nonNameKeywords.some((kw) => trimmed.includes(kw));
+
+          // ✅ 只記錄「像人名」且「不在黑名單中」的找不到者
+          if (isLikelyChineseName && !isClearlyNonName) {
+            notFound.push(trimmed);
+          }
+        }
+      });
         // ✅ 合併回結果
         if (sortedRows.length > 0) {
           rows.length = 0;
           rows.push(...headerRows, ...sortedRows);
         }
+        if (notFound.length === 0) {
+          setMissingNames(["✅ 匯出成功！所有人名皆已匹配。"]);
+        } else {
+          setMissingNames(notFound);
+        }
+        } else {
+        // 🟩 新增這裡：沒設定排序也顯示成功訊息
+        setMissingNames(["✅ 匯出成功！（未設定排序，已完整輸出所有資料）"]);
       }
-
+      
     // 3. 轉成 xlsx 的 sheet（先建立純值）
     const ws_data = rows.map((row: any[], idx: number) => {
       if (idx === 1) {
@@ -300,24 +348,6 @@ export default function App() {
           <button
             style={{
               border: "none",
-              background: tab === 2 ? "#e3f0fc" : "#f7fafd",
-              padding: "12px 40px",
-              cursor: "pointer",
-              borderBottom: tab === 2 ? "3px solid #1976d2" : "none",
-              fontWeight: tab === 2 ? "bold" : "normal",
-              fontSize: 20,
-              color: tab === 2 ? "#1976d2" : "#888",
-              borderTopLeftRadius: 8,
-              borderTopRightRadius: 8,
-              transition: "all 0.2s",
-            }}
-            onClick={() => setTab(2)}
-          >
-            過濾排序（選填）
-          </button>
-          <button
-            style={{
-              border: "none",
               background: tab === 1 ? "#e3f0fc" : "#f7fafd",
               padding: "12px 40px",
               cursor: "pointer",
@@ -331,6 +361,42 @@ export default function App() {
             }}
             onClick={() => setTab(1)}
           >
+            過濾排序（選填）
+          </button>
+          <button
+            style={{
+              border: "none",
+              background: tab === 2 ? "#e3f0fc" : "#f7fafd",
+              padding: "12px 40px",
+              cursor: "pointer",
+              borderBottom: tab === 2 ? "3px solid #1976d2" : "none",
+              fontWeight: tab === 2 ? "bold" : "normal",
+              fontSize: 20,
+              color: tab === 2 ? "#1976d2" : "#888",
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "all 0.2s",
+            }}
+            onClick={() => handleExportHtmlTableToExcel()}
+          >
+            匯出 Excel
+          </button>
+          <button
+            style={{
+              border: "none",
+              background: tab === 3 ? "#e3f0fc" : "#f7fafd",
+              padding: "12px 40px",
+              cursor: "pointer",
+              borderBottom: tab === 3 ? "3px solid #1976d2" : "none",
+              fontWeight: tab === 3 ? "bold" : "normal",
+              fontSize: 20,
+              color: tab === 3 ? "#1976d2" : "#888",
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "all 0.2s",
+            }}
+            onClick={() => setTab(3)}
+          >
             使用說明
           </button>
         </div>
@@ -338,52 +404,7 @@ export default function App() {
         {tab === 0 && (
           <div>
             <div style={{ textAlign: "center", marginBottom: 24, display: "flex", justifyContent: "center" }}>
-              {!isEditing ? (
-                <>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    style={{
-                      padding: "12px 40px",
-                      fontSize: 20,
-                      background: "#b0bec5",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                      boxShadow: "0 2px 8px rgba(60,60,120,0.08)",
-                      marginTop: 8,
-                      transition: "all 0.2s",
-                      display: "inline-block",
-                    }}
-                  >
-                    編輯
-                  </button>
-                  <button
-                    onClick={handleExportHtmlTableToExcel}
-                    style={{
-                      padding: "12px 40px",
-                      fontSize: 20,
-                      background: "#43a047",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                      boxShadow: "0 2px 12px rgba(67,160,71,0.12)",
-                      marginTop: 8,
-                      marginLeft: 16,
-                      transition: "all 0.2s",
-                      display: "inline-block",
-                    }}
-                    disabled={!savedText}
-                  >
-                    匯出 Excel
-                  </button>
-                </>
-              ) : (
+         
                <div style={{ textAlign: "center", marginBottom: 24, display: "flex", justifyContent: "center" }}>
                 <button
                   onClick={handleSave}
@@ -427,7 +448,6 @@ export default function App() {
                     清除
                 </button>
                </div>
-              )}
             </div>
             <textarea
               style={{
@@ -437,57 +457,22 @@ export default function App() {
                 padding: 20,
                 borderRadius: 12,
                 border: "1.5px solid #b0bec5",
-                background: isEditing ? "#fff" : "#f5f7fa",
+                background: "#fff",
                 resize: "vertical",
                 marginBottom: 24,
                 boxSizing: "border-box",
-                boxShadow: isEditing ? "0 2px 8px rgba(25,118,210,0.08)" : "none",
-                outline: isEditing ? "2px solid #1976d2" : "none",
+                boxShadow: "0 2px 8px rgba(25,118,210,0.08)",
+                outline: "2px solid #1976d2",
                 transition: "all 0.2s",
               }}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder="請貼上內容..."
-              disabled={!isEditing}
             />
           </div>
         )}
-        {/* 使用說明頁簽 */}
+        {/* 過濾排序(選填)頁簽  */}
         {tab === 1 && (
-          <div>
-            <div
-              style={{
-                minHeight: 380,
-                background: "#f5f7fa",
-                padding: 24,
-                border: "1.5px solid #e3e8ee",
-                borderRadius: 12,
-                fontSize: 20,
-                color: "#222",
-                boxShadow: "0 2px 8px rgba(60,60,120,0.06)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-                transition: "all 0.2s",
-              }}
-            >
-              <pre style={{ margin: 0, background: "none", fontFamily: "inherit" }}>
-                使用步驟：{'\n'}
-                1.護理班表查詢功能選好月份後進行查詢，查詢結果顯現後，按 Ctrl+U，會開啓原始 Html 視窗。{'\n'}
-                2.再按鍵盤 Ctrl+A 全選後，按 Ctrl+C 複製。{'\n'}
-                3.在本程式（護理班表匯出工具）的「編輯内容」頁簽按Ctrl+V貼上內容，接著按儲存。{'\n'}
-                  (注意：若要重新編輯，請按「編輯」按鈕。){'\n'}
-                4.切換到「過濾排序(選填)」頁籤，可選擇性貼上排序清單，然後按儲存排序。{'\n'}
-                5.再切回「編輯内容」頁籤，按「匯出 Excel」即可下載。{'\n'}
-                6.Exlel檔案會根據「過濾排序(選填)」頁籤的排序清單來排列人員，未列入清單者會被忽略。{'\n'}
-                7.若排序清單有空行或英數字，則會在該列留白，不補人名。{'\n'}
-                8.開啓匯出的 Excel，如要取消開啓的附註，「校閱-註解-顯示所有註解」這裡取消。{'\n'}
-                {'\n'}
-              </pre>
-            </div>
-          </div>
-        )}
-       {/* 過濾排序(選填)頁簽  */}
-        {tab === 2 && (
           <div>
             <div style={{ textAlign: "center", marginBottom: 24, display: "flex", justifyContent: "center" }}>
             <button
@@ -552,20 +537,78 @@ export default function App() {
                 padding: 20,
                 borderRadius: 12,
                 border: "1.5px solid #b0bec5",
-                background: isEditing ? "#fff" : "#f5f7fa",
+                background: "#fff",
                 resize: "vertical",
                 marginBottom: 24,
                 boxSizing: "border-box",
-                boxShadow: isEditing ? "0 2px 8px rgba(25,118,210,0.08)" : "none",
-                outline: isEditing ? "2px solid #1976d2" : "none",
+                boxShadow: "0 2px 8px rgba(25,118,210,0.08)" ,
+                outline: "2px solid #1976d2" ,
                 transition: "all 0.2s",
                 }}
               />
             </div>
           </div>
         )}
-
-        
+         {/* 匯出結果頁籤 */}
+        {tab === 2 && (
+          <div
+            style={{
+              background: "#f5f7fa",
+              padding: 24,
+              borderRadius: 12,
+              fontSize: 20,
+              border: "1.5px solid #e3e8ee",
+              boxShadow: "0 2px 8px rgba(60,60,120,0.06)",
+              minHeight: 300,
+            }}
+          >
+            <h3 style={{ color: "#1976d2", marginTop: 0 }}>以下人名未在表格中找到：</h3>
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.8,
+                color: missingNames[0]?.includes("✅") ? "green" : "black",
+                fontWeight: missingNames[0]?.includes("✅") ? 600 : 400,
+              }}
+            >
+              {missingNames.join("\n")}
+            </pre>
+          </div>
+        )}
+        {/* 使用說明頁簽 */}
+        {tab === 3 && (
+          <div>
+            <div
+              style={{
+                minHeight: 380,
+                background: "#f5f7fa",
+                padding: 24,
+                border: "1.5px solid #e3e8ee",
+                borderRadius: 12,
+                fontSize: 20,
+                color: "#222",
+                boxShadow: "0 2px 8px rgba(60,60,120,0.06)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                transition: "all 0.2s",
+              }}
+            >
+              <pre style={{ margin: 0, background: "none", fontFamily: "inherit" }}>
+                使用步驟：{'\n'}
+                1.護理班表查詢功能選好月份後進行查詢，查詢結果顯現後，按 Ctrl+U，會開啓原始 Html 視窗。{'\n'}
+                2.再按鍵盤 Ctrl+A 全選後，按 Ctrl+C 複製。{'\n'}
+                3.在本程式（護理班表匯出工具）的「編輯内容」頁簽按Ctrl+V貼上內容，接著按儲存。{'\n'}
+                  (注意：若要重新編輯，請按「編輯」按鈕。){'\n'}
+                4.切換到「過濾排序(選填)」頁籤，可選擇性貼上排序清單，然後按儲存排序。{'\n'}
+                5.再切回「編輯内容」頁籤，按「匯出 Excel」即可下載。{'\n'}
+                6.Exlel檔案會根據「過濾排序(選填)」頁籤的排序清單來排列人員，未列入清單者會被忽略。{'\n'}
+                7.若排序清單有空行或英數字，則會在該列留白，不補人名。{'\n'}
+                8.開啓匯出的 Excel，如要取消開啓的附註，「校閱-註解-顯示所有註解」這裡取消。{'\n'}
+                {'\n'}
+              </pre>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
