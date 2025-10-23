@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/vghtpe-schedule-export/',  // ⚠️ 若是 repo subpath 必須這樣
+  base: '/vghtpe-schedule-export-test/',  // ⚠️ 若是 repo subpath 必須這樣
   build: {
     outDir: 'dist'
   }
