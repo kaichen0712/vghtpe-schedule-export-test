@@ -102,90 +102,122 @@ useEffect(() => {
       rows.push(row);
     }
     // === 新增：根據排序清單重新排列 rows ===
+     // === 根據排序清單重新排列 rows（簡化後修正版）===
       const savedSortText = localStorage.getItem("scheduleSortList");
       if (savedSortText) {
-      let sortList = savedSortText
-        .split("\n")
-        .map((x) => x.trim())
-        let cleanedList: string[] = [];
-        let lastWasEmpty = false;
-        for (const line of sortList) {
-          const trimmed = line.trim();
-          const isNonName = trimmed === "" || /^[A-Za-z0-9]+$/.test(trimmed);
-          if (isNonName) {
-            if (!lastWasEmpty) {
-              cleanedList.push("");
-              lastWasEmpty = true;
-            }
-          } else {
-            cleanedList.push(trimmed);
-            lastWasEmpty = false;
-          }
-        }
-        sortList = cleanedList;
+        // ⚠️ 直接使用使用者輸入的換行，不預先清理空白
+        const sortList: string[] = savedSortText
+          .split("\n")
+          .map(x => x.trimEnd()); // 只去掉行尾空白，保留空白行
 
         const headerRows = rows.slice(0, 2);
         const dataRows = rows.slice(2);
         const sortedRows: any[] = [];
         const notFound: string[] = []; // 🟩 新增：紀錄沒比對到的人名
-       sortList.forEach((name) => {
-        const trimmed = name.trim();
+        let lastWasEmptyInOutput = false; // 新增：追蹤上一行是否為空白分區
 
-        // 🟦 若是英文、數字或空白行 → 當作分區，用空白行表示
-        if (/^[A-Za-z0-9]+$/.test(trimmed) || trimmed === "") {
-          const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
-            text: "",
-            imgTitles: [],
-            isRedText: false,
-          }));
-          sortedRows.push(blankRow);
-          return;
-        }
+        sortList.forEach((name) => {
+          const trimmed = name.trim();
 
-        // 🟩 若是中文名字 → 嘗試在表格中比對
-        const matchedRow = dataRows.find((row) => {
-          const firstCell = row[0]?.text?.trim?.() || "";
-          return firstCell === trimmed;
+          // 🟦 若為純空白行 → 插入一行空白（但避免連續兩行）
+          if (trimmed === "") {
+            if (!lastWasEmptyInOutput) {
+              const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+                text: "",
+                imgTitles: [],
+                isRedText: false,
+              }));
+              sortedRows.push(blankRow);
+              lastWasEmptyInOutput = true;
+            }
+            return;
+          }
+
+          // 🟦 若是純英數行 → 略過（不視為分區、不插空白）
+          if (/^[A-Za-z0-9]+$/.test(trimmed)) {
+            return;
+          }
+
+          // 🟩 嘗試在表格中比對姓名
+          const matchedRow = dataRows.find((row) => {
+            const firstCell = row[0]?.text?.trim?.() || "";
+            return firstCell === trimmed;
+          });
+
+          if (matchedRow) {
+            sortedRows.push(matchedRow);
+            lastWasEmptyInOutput = false; // 有成功比對到人名 → 清除空白狀態
+          } else {
+            // 找不到人名 → 不輸出該列，但保留空白分隔
+            if (!lastWasEmptyInOutput) {
+              const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+                text: "",
+                imgTitles: [],
+                isRedText: false,
+              }));
+              sortedRows.push(blankRow);
+              lastWasEmptyInOutput = true;
+            }
+
+            // 記錄未匹配人名
+            const isLikelyChineseName = /^[\u4e00-\u9fa5]{2,4}$/.test(trimmed);
+            const nonNameKeywords = [
+              "Leader", "新人", "上", "固定支援", "排班", "支援", "彈放",
+              "實際人數", "上班人數", "行事曆", "日期", "姓名",
+              "病房", "月初", "來班", "E", "N", "D"
+            ];
+            const isClearlyNonName =
+              /^[0-9]+$/.test(trimmed) ||
+              nonNameKeywords.some((kw) => trimmed.includes(kw));
+            if (isLikelyChineseName && !isClearlyNonName) {
+              notFound.push(trimmed);
+            }
+          }
         });
 
-        if (matchedRow) {
-          sortedRows.push(matchedRow);
-        } else {
-          // 🧩 判斷是否為中文人名（2~4個中文字，可夾一個外文字母）
-          const isLikelyChineseName = /^[\u4e00-\u9fa5]{2,4}$/.test(trimmed);
+      // ✅ 合併回結果（修正版：分辨「只有分區/英數」vs「有人名但全找不到」）
+      const hasChineseInSortList = sortList.some(line => /[\u4e00-\u9fa5]/.test(line));
+      const hasAnyMatchedName = sortedRows.some(r => (r[0]?.text ?? "") !== ""); // true 表示至少有一列人名
 
-          // 🚫 定義常見非人名關鍵詞
-          const nonNameKeywords = [
-            "Leader", "新人", "上", "固定支援", "排班", "支援", "彈放",
-            "實際人數", "上班人數", "行事曆", "日期", "姓名",
-            "病房", "月初", "來班", "E", "N", "D"
-          ];
-
-          // 🚫 若文字包含以上任一關鍵詞或是全數字，則略過
-          const isClearlyNonName =
-            /^[0-9]+$/.test(trimmed) ||
-            nonNameKeywords.some((kw) => trimmed.includes(kw));
-
-          // ✅ 只記錄「像人名」且「不在黑名單中」的找不到者
-          if (isLikelyChineseName && !isClearlyNonName) {
-            notFound.push(trimmed);
-          }
-        }
-      });
-        // ✅ 合併回結果
-        if (sortedRows.length > 0) {
-          rows.length = 0;
-          rows.push(...headerRows, ...sortedRows);
-        }
-        if (notFound.length === 0) {
-          setMissingNames(["✅ 匯出成功！所有人名皆已匹配。"]);
-        } else {
+      if (hasAnyMatchedName) {
+        // 正常情況：有至少一個人名被加入
+        rows.length = 0;
+        rows.push(...headerRows, ...sortedRows);
+        if (notFound.length > 0) {
           setMissingNames(notFound);
-        }
         } else {
-        // 🟩 新增這裡：沒設定排序也顯示成功訊息
-        setMissingNames(["✅ 匯出成功！（未設定排序，已完整輸出所有資料）"]);
+          setMissingNames(["✅ 匯出成功！所有人名皆已匹配。"]);
+        }
+        setTab(2);
+      } else {
+        // 沒有任何人名被加入（sortedRows 可能只有空白分區，或完全沒有東西）
+        if (!hasChineseInSortList) {
+          // 例如：輸入「156」「Leader」或只有空行 —— 直接提醒並中止，不輸出
+          alert("⚠️ 排序清單未包含任何中文姓名，請確認輸入是否正確。");
+          return;
+        } else {
+          // 有中文但全找不到（例如：中文人名都不在 table）
+          const confirmEmpty = window.confirm(
+            "⚠️ 排序清單中的人名皆未在表格中找到。\n是否仍要匯出空白表格（只保留標題）？"
+          );
+          if (!confirmEmpty) return;
+
+          rows.length = 0;
+          rows.push(...headerRows);
+          setMissingNames(
+            notFound.length > 0
+              ? notFound
+              : ["⚠️ 清單人名皆未匹配，已輸出空白表格。"]
+          );
+          setTab(2);
+        }
       }
+
+    } else {
+      // 沒設定排序：輸出完整原始表格
+      setMissingNames(["✅ 匯出成功！（未設定排序，已完整輸出所有資料）"]);
+      setTab(2);
+    }
       
     // 3. 轉成 xlsx 的 sheet（先建立純值）
     const ws_data = rows.map((row: any[], idx: number) => {
@@ -598,10 +630,9 @@ useEffect(() => {
                 1.護理班表查詢功能選好月份後進行查詢，查詢結果顯現後，按 Ctrl+U，會開啓原始 Html 視窗。{'\n'}
                 2.再按鍵盤 Ctrl+A 全選後，按 Ctrl+C 複製。{'\n'}
                 3.在本程式（護理班表匯出工具）的「編輯内容」頁簽按Ctrl+V貼上內容，接著按儲存。{'\n'}
-                  (注意：若要重新編輯，請按「編輯」按鈕。){'\n'}
                 4.切換到「過濾排序(選填)」頁籤，可選擇性貼上排序清單，然後按儲存排序。{'\n'}
-                5.再切回「編輯内容」頁籤，按「匯出 Excel」即可下載。{'\n'}
-                6.Exlel檔案會根據「過濾排序(選填)」頁籤的排序清單來排列人員，未列入清單者會被忽略。{'\n'}
+                5.點擊頁籤「匯出 Excel」即可下載。{'\n'}
+                6.Excel檔案會根據「過濾排序(選填)」頁籤的排序清單來排列人員，未列入清單者不會加入本次匯出。{'\n'}
                 7.若排序清單有空行或英數字，則會在該列留白，不補人名。{'\n'}
                 8.開啓匯出的 Excel，如要取消開啓的附註，「校閱-註解-顯示所有註解」這裡取消。{'\n'}
                 {'\n'}
