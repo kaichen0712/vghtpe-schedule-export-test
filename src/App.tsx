@@ -10,6 +10,29 @@ export default function App() {
   const [filterText, setFilterText] = useState(""); // 過濾排序用
   const [missingNames, setMissingNames] = useState<string[]>([]);// 🟩 匯出後顯示沒比對到的人名
 
+// 🔹 每次進入頁面（mount）或關閉頁面（unload）時清空 localStorage
+useEffect(() => {
+  // 頁面一載入時清除舊資料
+  localStorage.removeItem("mySavedText");
+  localStorage.removeItem("scheduleSortList");
+  localStorage.removeItem("missingNames");
+
+  // 若使用者離開頁面（例如關掉分頁或重新整理）
+  const handleBeforeUnload = () => {
+    localStorage.removeItem("mySavedText");
+    localStorage.removeItem("scheduleSortList");
+    localStorage.removeItem("missingNames");
+  };
+
+  window.addEventListener("beforeunload", handleBeforeUnload);
+
+  // 清理事件監聽器
+  return () => {
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+  };
+}, []);
+
+
   // // 讀取 localStorage（如需自動載入先前內容，可開啟）
   // useEffect(() => {
   //   const saved = localStorage.getItem("mySavedText");
@@ -29,12 +52,14 @@ useEffect(() => {
   const handleSave = () => {
     setSavedText(inputText);
     localStorage.setItem("mySavedText", inputText); //localStorage key = "mySavedText"
+    alert("資料已儲存！");
   };
   // 清除輸入框資料
   const handleClear = () => {
   setInputText("");
   setSavedText("");
   localStorage.removeItem("mySavedText"); // 同時清掉 localStorage 的內容
+  alert("資料已清除！");
   };
   //清除排序條件  
   const handleClearSort = () => {
