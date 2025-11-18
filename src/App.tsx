@@ -5,21 +5,48 @@ import * as XLSX from "xlsx-js-style";
 export default function App() {
   // 新增：頁簽狀態與文字內容
   const [tab, setTab] = useState(0); // 0: 編輯內容, 1: 使用說明, 2: 排序
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(""); //區塊1
   const [savedText, setSavedText] = useState("");
+  const [inputText2, setInputText2] = useState(""); //區塊2
+  const [savedText2, setSavedText2] = useState("");
+  const [inputText3, setInputText3] = useState(""); //區塊3
+  const [savedText3, setSavedText3] = useState("");
   const [filterText, setFilterText] = useState(""); // 過濾排序用
   const [missingNames, setMissingNames] = useState<string[]>([]);// 🟩 匯出後顯示沒比對到的人名
+  // 提取 HTML 字串中的 table 元素
+  const extractTable = (htmlString: string) => {
+    if (!htmlString || !htmlString.trim()) return null;
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, "text/html");
+
+    return doc.querySelector("table");
+  };
+ const normalizeName = (name: string) => {
+  return name
+    .replace(/\u00A0/g, "")      // 移除 &nbsp;
+    .replace(/\u200B/g, "")      // 移除 zero-width space
+    .replace(/\uFEFF/g, "")      // 移除 BOM
+    .replace(/[\u3000]/g, "")    // 全形空格
+    .replace(/\s+/g, "")         // 移除所有一般空白
+    .trim();
+};
+
 
 // 🔹 每次進入頁面（mount）或關閉頁面（unload）時清空 localStorage
 useEffect(() => {
   // 頁面一載入時清除舊資料
   localStorage.removeItem("mySavedText");
+  localStorage.removeItem("mySavedText2");
+  localStorage.removeItem("mySavedText3");
   localStorage.removeItem("scheduleSortList");
   localStorage.removeItem("missingNames");
 
   // 若使用者離開頁面（例如關掉分頁或重新整理）
   const handleBeforeUnload = () => {
     localStorage.removeItem("mySavedText");
+    localStorage.removeItem("mySavedText2");
+    localStorage.removeItem("mySavedText3");
     localStorage.removeItem("scheduleSortList");
     localStorage.removeItem("missingNames");
   };
@@ -58,7 +85,14 @@ useEffect(() => {
   const handleClear = () => {
   setInputText("");
   setSavedText("");
+  setInputText2("");
+  setSavedText2("");
+  setInputText3("");
+  setSavedText3("");
+
   localStorage.removeItem("mySavedText"); // 同時清掉 localStorage 的內容
+  localStorage.removeItem("mySavedText2");
+  localStorage.removeItem("mySavedText3");
   alert("資料已清除！");
   };
   //清除排序條件  
@@ -70,62 +104,128 @@ useEffect(() => {
 
   // 解析 HTML table 並轉成 xlsx（支援紅字樣式、全表新細明體12pt）
   const handleExportHtmlTableToExcel = () => {
-     const html = savedText || inputText;
+    //  const html = savedText || inputText;
 
-      // 🔸若內容完全是空的
-      if (!html.trim()) {
-        alert("請先貼上內容或儲存表格再匯出！");
-        return;
-      }
-    // 1. 解析 HTML
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(savedText, "text/html");
-    const table = doc.querySelector("table");
-    if (!table) {
-      alert("找不到 <table>，請確認內容有貼上 HTML 表格！");
+    //   // 🔸若內容完全是空的
+    //   if (!html.trim()) {
+    //     alert("請先貼上內容或儲存表格再匯出！");
+    //     return;
+    //   }
+    // // 1. 解析 HTML
+    // const parser = new DOMParser();
+    // const doc = parser.parseFromString(savedText, "text/html");
+    // const table = doc.querySelector("table");
+    // if (!table) {
+    //   alert("找不到 <table>，請確認內容有貼上 HTML 表格！");
+    //   return;
+    // }
+    const html1 = savedText || inputText;
+    const html2 = savedText2 || inputText2;
+    const html3 = savedText3 || inputText3;
+
+    // 若三份都沒內容
+    if (!html1.trim() && !html2.trim() && !html3.trim()) {
+      alert("請至少在三個區塊中貼上一份 HTML 內容！");
       return;
     }
 
-    // 2. 解析表格內容
-    const rows: any[] = []; 
-    for (const tr of table.querySelectorAll("tr")) {
-      const row = [];
-      for (const cell of tr.querySelectorAll("th,td")) {
-        // 取 cell 文字（忽略 <img>）
-        let text = "";
-        for (const node of cell.childNodes) {
-          if (node.nodeType === 1 && node.nodeName === "IMG") continue;
-          text += node.textContent || "";
-        }
-        text = text.replace(/\s+/g, " ").trim();
+    // 個別解析成 table
+    const t1 = extractTable(html1);
+    const t2 = extractTable(html2);
+    const t3 = extractTable(html3);
 
-        // 文字替換
-        if (text === "例假" || text === "休假" || text === "休息日" || text === "特別休假") {
-          text = "1";
-        }
+    // 把三個 table 的 HTML 串在一起
+    let combinedTablesHtml = "";
+    if (t1) combinedTablesHtml += t1.outerHTML;
+    if (t2) combinedTablesHtml += t2.outerHTML;
+    if (t3) combinedTablesHtml += t3.outerHTML;
 
-        // 是否包含 alt="長假預約"
-        const hasLongVacation = Array.from(cell.querySelectorAll("img")).some(
-          (img) => img.getAttribute("alt")?.includes("長假預約")
-        );
-
-        // 如果包含 alt="長假預約"，則設定文字為 "1"
-        if (hasLongVacation) {
-          text = "1";
-        }
-
-        // 收集 <img title="..."> 當成註解
-        const imgTitles = Array.from(cell.querySelectorAll("img[title]"))
-          .map((img) => img.getAttribute("title")?.trim() || "")
-          .filter(Boolean);
-
-        // 需要紅色字體（遇到長假預約）
-        const isRedText = hasLongVacation;
-
-        row.push({ text, imgTitles, isRedText });
-      }
-      rows.push(row);
+    if (!combinedTablesHtml.trim()) {
+      alert("三個區塊中沒有找到任何 <table>！");
+      return;
     }
+
+    // 包起來給 DOMParser 用
+    const finalHtml = `<html><body>${combinedTablesHtml}</body></html>`;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(finalHtml, "text/html");
+    
+    // 2. 解析表格內容（🟦 完整保留你原本結構，只改來源）
+      const rows: any[] = [];
+
+      // 🟦 專門解析一張 table → return row 陣列（結構與你原本完全相同）
+      const parseTableRows = (table: HTMLTableElement | null) => {
+        const parsed: any[] = [];
+        if (!table) return parsed;
+
+        for (const tr of table.querySelectorAll("tr")) {
+          const row = [];
+
+          for (const cell of tr.querySelectorAll("th,td")) {
+            // 取 cell 文字（忽略 <img>）
+            let text = "";
+            for (const node of cell.childNodes) {
+              if (node.nodeType === 1 && node.nodeName === "IMG") continue;
+              text += node.textContent || "";
+            }
+            text = text.replace(/\s+/g, " ").trim();
+
+            // 文字替換（保留你原本）
+            if (text === "例假" || text === "休假" || text === "休息日" || text === "特別休假") {
+              text = "1";
+            }
+
+            // 是否包含 alt="長假預約"
+            const hasLongVacation = Array.from(cell.querySelectorAll("img")).some(
+              (img) => img.getAttribute("alt")?.includes("長假預約")
+            );
+
+            if (hasLongVacation) {
+              text = "1";
+            }
+
+            // 收集 <img title="...">
+            const imgTitles = Array.from(cell.querySelectorAll("img[title]"))
+              .map((img) => img.getAttribute("title")?.trim() || "")
+              .filter(Boolean);
+
+            const isRedText = hasLongVacation;
+
+            row.push({ text: normalizeName(text), imgTitles, isRedText });
+          }
+
+          parsed.push(row);
+        }
+
+        return parsed;
+      };
+
+      // 🟦 分別從三個區塊解析為 row
+      const rows1 = parseTableRows(t1);
+      const rows2 = parseTableRows(t2);
+      const rows3 = parseTableRows(t3);
+
+      console.log("=== 測試 rows1 ===", rows1);
+      console.log("=== 測試 rows2 ===", rows2);
+      console.log("=== 測試 rows3 ===", rows3);
+
+      // 🟦 合併三個區塊：只保留第一份表頭，其它表格只加入資料列
+      if (rows1.length > 0) {
+        // 區塊1：完整加入（包含表頭 0,1）
+        rows.push(...rows1);
+      }
+
+      if (rows2.length > 0) {
+        // 區塊2：只加入資料列（從 index 2 開始）
+        rows.push(...rows2);
+      }
+
+      if (rows3.length > 0) {
+        // 區塊3：只加入資料列（從 index 2 開始）
+        rows.push(...rows3);
+      }
+
+
     // === 新增：根據排序清單重新排列 rows ===
      // === 根據排序清單重新排列 rows（簡化後修正版）===
       const savedSortText = localStorage.getItem("scheduleSortList");
@@ -160,20 +260,33 @@ useEffect(() => {
 
           // 🟦 若是純英數行 → 略過（不視為分區、不插空白）
           if (/^[A-Za-z0-9]+$/.test(trimmed)) {
+            if (!lastWasEmptyInOutput) {
+              const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
+                text: "",
+                imgTitles: [],
+                isRedText: false,
+              }));
+              sortedRows.push(blankRow);
+              lastWasEmptyInOutput = true;
+            }
             return;
           }
-
-          // 🟩 嘗試在表格中比對姓名
-          const matchedRow = dataRows.find((row) => {
-            const firstCell = row[0]?.text?.trim?.() || "";
-            return firstCell === trimmed;
+          // 🟩 嘗試在表格中比對姓名// 🟦 找出所有「同名同姓」的列（可能 1 筆，也可能多筆）
+          const matchedRows = dataRows.filter((row) => {
+            const firstCell = normalizeName(row[0]?.text || "");
+            console.log("🔍 comparing:",
+              "input=", normalizeName(trimmed),
+              " row=", normalizeName(row[0]?.text || "")
+            );
+            return firstCell === normalizeName(trimmed);
           });
 
-          if (matchedRow) {
-            sortedRows.push(matchedRow);
-            lastWasEmptyInOutput = false; // 有成功比對到人名 → 清除空白狀態
+          if (matchedRows.length > 0) {
+            // 🟩 找到多筆 → 每一筆都輸出（保持原本三區塊順序）
+            matchedRows.forEach(mr => sortedRows.push(mr));
+            lastWasEmptyInOutput = false;
           } else {
-            // 找不到人名 → 不輸出該列，但保留空白分隔
+            // 🟥 找不到 → 舊邏輯保持不動
             if (!lastWasEmptyInOutput) {
               const blankRow = new Array(rows[0]?.length || 1).fill(null).map(() => ({
                 text: "",
@@ -184,7 +297,6 @@ useEffect(() => {
               lastWasEmptyInOutput = true;
             }
 
-            // 記錄未匹配人名
             const isLikelyChineseName = /^[\u4e00-\u9fa5]{2,4}$/.test(trimmed);
             const nonNameKeywords = [
               "Leader", "新人", "上", "固定支援", "排班", "支援", "彈放",
@@ -194,10 +306,12 @@ useEffect(() => {
             const isClearlyNonName =
               /^[0-9]+$/.test(trimmed) ||
               nonNameKeywords.some((kw) => trimmed.includes(kw));
+
             if (isLikelyChineseName && !isClearlyNonName) {
               notFound.push(trimmed);
             }
           }
+
         });
 
       // ✅ 合併回結果（修正版：分辨「只有分區/英數」vs「有人名但全找不到」）
@@ -506,10 +620,12 @@ useEffect(() => {
                 </button>
                </div>
             </div>
+            {/* 文字輸入區域 */}
+            <h3>區塊 1</h3>
             <textarea
               style={{
                 width: "100%",
-                minHeight: 320,
+                minHeight: 240,
                 fontSize: 20,
                 padding: 20,
                 borderRadius: 12,
@@ -526,6 +642,48 @@ useEffect(() => {
               onChange={(e) => setInputText(e.target.value)}
               placeholder="請貼上內容..."
             />
+             <h3>區塊 2</h3>
+              <textarea
+                style={{
+                  width: "100%",
+                  minHeight: 240,
+                  fontSize: 20,
+                  padding: 20,
+                  borderRadius: 12,
+                  border: "1.5px solid #b0bec5",
+                  background: "#fff",
+                  resize: "vertical",
+                  marginBottom: 24,
+                  boxSizing: "border-box",
+                  boxShadow: "0 2px 8px rgba(25,118,210,0.08)",
+                  outline: "2px solid #1976d2",
+                  transition: "all 0.2s",
+                }}
+                value={inputText2}
+                onChange={(e) => setInputText2(e.target.value)}
+                placeholder="請貼上第二份內容..."
+                />  
+                <h3>區塊 3</h3>
+                  <textarea
+                    style={{
+                      width: "100%",
+                      minHeight: 240,
+                      fontSize: 20,
+                      padding: 20,
+                      borderRadius: 12,
+                      border: "1.5px solid #b0bec5",
+                      background: "#fff",
+                      resize: "vertical",
+                      marginBottom: 24,
+                      boxSizing: "border-box",
+                      boxShadow: "0 2px 8px rgba(25,118,210,0.08)",
+                      outline: "2px solid #1976d2",
+                      transition: "all 0.2s",
+                    }}
+                    value={inputText3}
+                    onChange={(e) => setInputText3(e.target.value)}
+                    placeholder="請貼上第三份內容..."
+                  />
           </div>
         )}
         {/* 過濾排序(選填)頁簽  */}
